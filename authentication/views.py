@@ -5,6 +5,7 @@ from rest_framework.response import Response
 from rest_framework.exceptions import AuthenticationFailed
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth import get_user_model
+from django.utils.timezone import now
 from .serializers import UserSerializer
 from rest_framework_simplejwt.views import (
     TokenObtainPairView,
@@ -43,6 +44,10 @@ class Login (TokenObtainPairView):
         refresh = RefreshToken.for_user(user)
         access_token = str(refresh.access_token)
         refresh_token = str(refresh)
+
+        # Actualizar campos
+        user.last_login = now()
+        user.save()
 
         response = {
             'access_token': access_token,
