@@ -1,1 +1,4 @@
-.plataforma_educativa/.env
+plataforma_educativa/env
+db.sqlite3
+user_rol/__pycache__/
+authentication/__pycache__/

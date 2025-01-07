@@ -1,16 +1,24 @@
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.views import APIView
 from rest_framework.decorators import api_view
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.exceptions import AuthenticationFailed
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth import get_user_model
+from .serializers import UserSerializer
 from rest_framework_simplejwt.views import (
     TokenObtainPairView,
     TokenRefreshView,
 )
 
 User = get_user_model() 
+
+class Register (APIView):
+    def post(self, request):
+        serializer = UserSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response({"message": "User created sucessfully!"}, status=status.HTTP_201_CREATED)
 
 class Login (TokenObtainPairView):
     def post(self, request,  *args, **kwargs):
