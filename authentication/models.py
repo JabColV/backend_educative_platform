@@ -19,14 +19,4 @@ from django.contrib.auth.models import User
 #         return f'{self.name} {self.lastname}' 
 
 
-class PasswordResetToken(models.Model):
-    user = models.ForeignKey(User, on_delete=models.CASCADE)
-    token = models.CharField(max_length=64, primary_key=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-    expiration_date = models.DateTimeField()
-    class Meta:
-        managed = True
-        db_table = 'PasswordResetToken'
 
-    def __str__(self):
-        return f"Token for {self.user.email}"
