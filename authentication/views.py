@@ -6,11 +6,18 @@ from rest_framework.exceptions import AuthenticationFailed
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth import get_user_model
 from django.utils.timezone import now
+from authentication.utils import ExpiringPasswordResetTokenGenerator
 from .serializers import UserSerializer
-from rest_framework_simplejwt.views import (
-    TokenObtainPairView,
-    TokenRefreshView,
-)
+from django.core.mail import send_mail
+from django.core.mail import BadHeaderError
+from decouple import config
+from smtplib import SMTPException
+import logging
+from rest_framework_simplejwt.views import ( TokenObtainPairView, TokenRefreshView,)
+from django.contrib.auth.hashers import make_password
+
+# Configura el logger si no lo tienes configurado
+logger = logging.getLogger(__name__)
 
 User = get_user_model() 
 
@@ -96,3 +103,72 @@ def Logout(request):
     
     # Si no se encuentra el usuario
     return Response({'error': 'No existe este usuario.'}, status=status.HTTP_400_BAD_REQUEST)
+
+class PasswordResetRequest(APIView):
+    def post(self, request):
+        email = request.data.get('email')
+        username = request.data.get('username')
+        try:
+            user = User.objects.get(email=email, username=username)
+            token_generator = ExpiringPasswordResetTokenGenerator()
+            token = token_generator.create_token(user, user.id)
+            url_front = config('FRONTEND_URL')
+            
+            reset_link = f"{url_front}/auth/password_reset_validate/{token}"
+            send_mail(
+                f'Restablecimiento de contraseña por parte del usuario {user.username}',
+                f'Recibimos una solicitud de tu parte. Usa este enlace para restablecer tu contraseña: {reset_link}',
+                "test@test.com",
+                [email],
+                fail_silently=False
+            )
+            return Response({'message': 'Email successfully sent!'}, status=status.HTTP_200_OK)
+        except User.DoesNotExist:
+            return Response({'error': 'User not found.'}, status=status.HTTP_400_BAD_REQUEST)
+        except BadHeaderError:
+            logger.error("Error: Invalid header in the email.")
+            return Response({'error': 'Bad header in the email request.'}, status=status.HTTP_400_BAD_REQUEST)
+        except SMTPException as e:
+            logger.error(f"SMTP error when sending the email: {e}")
+            return Response({'error': f"SMTP error: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        except Exception as e:
+            logger.error(f"Unnexpected error when sending the email: {e}")
+            return Response({'error': 'Unexpected error occurred.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+class PasswordResetTokenValidation(APIView):
+    def get(self, request, token):
+        try:
+            token_generator = ExpiringPasswordResetTokenGenerator()
+            user_id, decoded_token, expiration = token_generator.decode_token(token)  # Decodifica y separa el token
+            user = User.objects.get(id=user_id)
+            
+            if token_generator.is_token_valid(user, decoded_token, expiration):
+                # Lógica de validación adicional, si es necesario
+                return Response({'message': 'Token is valid', 'token':{token}}, status=status.HTTP_200_OK)
+            else:
+                return Response({'error': 'Token has expired'}, status=status.HTTP_400_BAD_REQUEST)
+        except ValueError:
+            return Response({'error': 'Invalid token format'}, status=status.HTTP_400_BAD_REQUEST)
+        except User.DoesNotExist:
+            return Response({'error': 'User not found.'}, status=status.HTTP_400_BAD_REQUEST)
+               
+class PasswordResetTokenCompleted(APIView):
+    def post(self, request):
+        try:
+            token = request.data.get('token') 
+            token_generator = ExpiringPasswordResetTokenGenerator()
+            user_id, decoded_token, expiration = token_generator.decode_token(token)
+            user = User.objects.get(id=user_id)
+
+            if token_generator.is_token_valid(user, decoded_token, expiration):
+                new_password = request.data.get('new_password') 
+                user.password = make_password(new_password)
+                user.save()
+                return Response({"message": "Reset password process completed."}, status=status.HTTP_200_OK)
+            else:
+                return Response({'error': 'Token has expired'}, status=status.HTTP_400_BAD_REQUEST)
+
+        except User.DoesNotExist:
+            return Response({'error': 'User not found.'}, status=status.HTTP_400_BAD_REQUEST)   
+        except ValueError:
+            return Response({'error': 'Invalid token format.'}, status=status.HTTP_400_BAD_REQUEST)
